@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resume Matcher</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #f5f4f0;
+      --surface:      #ffffff;
+      --surface-alt:  #f0efe9;
+      --border:       rgba(0,0,0,0.10);
+      --border-strong:rgba(0,0,0,0.18);
+      --text-primary: #0b0b0b;
+      --text-secondary:#52514e;
+      --text-muted:   #898781;
+      --accent:       #2a78d6;
+      --accent-bg:    #e6f1fb;
+      --accent-text:  #185fa5;
+      --success:      #1baf7a;
+      --success-bg:   #e1f5ee;
+      --success-text: #0f6e56;
+      --danger:       #e34948;
+      --danger-bg:    #fcebeb;
+      --danger-text:  #a32d2d;
+      --warn:         #eda100;
+      --warn-bg:      #fef6e6;
+      --warn-text:    #8a6200;
+      --radius:       8px;
+      --font-sans:    system-ui, -apple-system, sans-serif;
+      --font-mono:    ui-monospace, 'Cascadia Code', monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:           #111110;
+        --surface:      #1a1a19;
+        --surface-alt:  #222221;
+        --border:       rgba(255,255,255,0.10);
+        --border-strong:rgba(255,255,255,0.18);
+        --text-primary: #f5f4f0;
+        --text-secondary:#c3c2b7;
+        --text-muted:   #898781;
+        --accent:       #3987e5;
+        --accent-bg:    #0c2540;
+        --accent-text:  #85b7eb;
+        --success:      #199e70;
+        --success-bg:   #04201a;
+        --success-text: #5dcaa5;
+        --danger:       #e66767;
+        --danger-bg:    #280f0f;
+        --danger-text:  #f09595;
+        --warn:         #c98500;
+        --warn-bg:      #2a2008;
+        --warn-text:    #e8b84a;
+      }
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 24px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    header p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .input-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .input-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }
+
+    .input-card label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .input-card textarea {
+      width: 100%;
+      height: 220px;
+      resize: vertical;
+      background: var(--surface-alt);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      font-size: 13px;
+      font-family: var(--font-mono);
+      color: var(--text-primary);
+      line-height: 1.6;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .input-card textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .input-card textarea::placeholder {
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+    }
+
+    .word-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    .word-hint.warn { color: var(--warn-text); }
+
+    .analyze-btn {
+      display: block;
+      width: 100%;
+      padding: 13px;
+      background: var(--text-primary);
+      color: var(--bg);
+      border: none;
+      border-radius: var(--radius);
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      margin-bottom: 1rem;
+      font-family: var(--font-sans);
+    }
+
+    .analyze-btn:hover:not(:disabled) { opacity: 0.82; }
+    .analyze-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* History */
+    .history-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+
+    .history-bar label {
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .history-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .history-pill {
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 0.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .history-pill:hover { border-color: var(--accent); color: var(--text-primary); }
+    .history-pill.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-text); }
+
+    /* Score section */
+    .score-section {
+      display: flex;
+      align-items: flex-start;
+      gap: 2rem;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 16px;
+    }
+
+    .score-left {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .dial-wrap {
+      position: relative;
+      width: 120px;
+      height: 120px;
+    }
+
+    .dial-number {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 28px;
+      font-weight: 500;
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+    }
+
+    .score-meta {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .score-meta .score-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .score-verdict {
+      font-size: 20px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .score-summary {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+
+    /* Score breakdown */
+    .score-breakdown {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 0.5px solid var(--border);
+    }
+
+    .score-breakdown h4 {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .breakdown-item {
+      margin-bottom: 10px;
+    }
+
+    .breakdown-item:last-child { margin-bottom: 0; }
+
+    .breakdown-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      margin-bottom: 4px;
+      gap: 8px;
+    }
+
+    .breakdown-label { color: var(--text-secondary); }
+    .breakdown-score { font-family: var(--font-mono); color: var(--text-primary); font-size: 12px; }
+
+    .breakdown-bar {
+      height: 6px;
+      background: var(--surface-alt);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 3px;
+    }
+
+    .breakdown-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+
+    .breakdown-detail {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Result cards */
+    .section-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .result-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }
+
+    .result-card h3 {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .keyword-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .kw {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+
+    .kw.present  { background: var(--success-bg); color: var(--success-text); }
+    .kw.missing  { background: var(--accent-bg);  color: var(--accent-text);  }
+
+    .gap-list {
+      list-style: none;
+    }
+
+    .gap-list li {
+      font-size: 13px;
+      color: var(--text-secondary);
+      padding: 7px 0;
+      border-bottom: 0.5px solid var(--border);
+      line-height: 1.5;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .gap-list li:last-child { border-bottom: none; }
+
+    .gap-list li i {
+      font-size: 15px;
+      margin-top: 1px;
+      flex-shrink: 0;
+    }
+
+    .icon-gap      { color: var(--danger); }
+    .icon-strength { color: var(--success); }
+
+    /* Rewrites */
+    .rewrite-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 16px;
+    }
+
+    .rewrite-card h3 {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .rewrite-item {
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 0.5px solid var(--border);
+    }
+
+    .rewrite-item:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .rewrite-section-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+
+    .rewrite-direction {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .rewrite-before {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      background: var(--surface-alt);
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      line-height: 1.55;
+    }
+
+    .rewrite-after {
+      font-size: 13px;
+      color: var(--success-text);
+      font-family: var(--font-mono);
+      background: var(--success-bg);
+      border-radius: 6px;
+      padding: 8px 12px;
+      line-height: 1.55;
+    }
+
+    /* Export toolbar */
+    .export-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .export-btn {
+      font-size: 13px;
+      padding: 8px 14px;
+      border-radius: var(--radius);
+      border: 0.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: border-color 0.15s;
+    }
+
+    .export-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+
+    /* Utility */
+    .hidden   { display: none !important; }
+
+    .error-msg {
+      background: var(--danger-bg);
+      color: var(--danger-text);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .warn-msg {
+      background: var(--warn-bg);
+      color: var(--warn-text);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .loading {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 16px;
+    }
+
+    .loading-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .stream-preview {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--surface-alt);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      max-height: 120px;
+      overflow-y: auto;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .stream-status {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 1.25rem 0.75rem; }
+
+      .input-grid { grid-template-columns: 1fr; }
+      .section-grid { grid-template-columns: 1fr; }
+
+      .score-section {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 1.25rem;
+      }
+
+      .score-meta { width: 100%; }
+      .score-breakdown { text-align: left; }
+      .breakdown-header { flex-wrap: wrap; }
+
+      .export-bar { justify-content: stretch; }
+      .export-btn { flex: 1; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Resume matcher</h1>
+      <p>Paste your resume and a job description to get a match score, keyword gaps, and targeted rewrites.</p>
+    </header>
+
+    <div class="input-grid">
+      <div class="input-card">
+        <label for="resume">Your resume</label>
+        <textarea id="resume" placeholder="Paste your resume text here..." oninput="updateWordHints()"></textarea>
+        <div class="word-hint" id="resume-hint"></div>
+      </div>
+      <div class="input-card">
+        <label for="jobdesc">Job description</label>
+        <textarea id="jobdesc" placeholder="Paste the full job posting here..." oninput="updateWordHints()"></textarea>
+        <div class="word-hint" id="jobdesc-hint"></div>
+      </div>
+    </div>
+
+    <div id="warn-msg" class="warn-msg hidden"></div>
+    <div id="error-msg" class="error-msg hidden"></div>
+
+    <button class="analyze-btn" id="analyze-btn" onclick="analyze()">Analyze match</button>
+
+    <div id="history-bar" class="history-bar hidden">
+      <label>Recent</label>
+      <div class="history-pills" id="history-pills"></div>
+    </div>
+
+    <div id="loading" class="loading hidden">
+      <div class="loading-header">
+        <div class="spinner"></div>
+        <span id="loading-label">Analyzing your resume…</span>
+      </div>
+      <div class="stream-preview" id="stream-preview"></div>
+      <div class="stream-status" id="stream-status"></div>
+    </div>
+
+    <div id="results" class="hidden">
+      <div class="export-bar">
+        <button class="export-btn" onclick="exportText()">
+          <i class="ti ti-file-text"></i> Download text
+        </button>
+        <button class="export-btn" onclick="exportPDF()">
+          <i class="ti ti-file-type-pdf"></i> Download PDF
+        </button>
+      </div>
+
+      <div class="score-section">
+        <div class="score-left">
+          <div class="dial-wrap">
+            <canvas id="dial" width="120" height="120"></canvas>
+            <div class="dial-number" id="dial-number">0%</div>
+          </div>
+        </div>
+        <div class="score-meta">
+          <div class="score-label">Match score</div>
+          <div class="score-verdict" id="score-verdict">—</div>
+          <div class="score-summary" id="score-summary"></div>
+          <div class="score-breakdown" id="score-breakdown"></div>
+        </div>
+      </div>
+
+      <div class="section-grid">
+        <div class="result-card">
+          <h3>Keywords found</h3>
+          <div class="keyword-list" id="kw-present"></div>
+        </div>
+        <div class="result-card">
+          <h3>Keywords to add</h3>
+          <div class="keyword-list" id="kw-missing"></div>
+        </div>
+      </div>
+
+      <div class="section-grid">
+        <div class="result-card">
+          <h3>Key gaps</h3>
+          <ul class="gap-list" id="gap-list"></ul>
+        </div>
+        <div class="result-card">
+          <h3>Strengths to highlight</h3>
+          <ul class="gap-list" id="strength-list"></ul>
+        </div>
+      </div>
+
+      <div class="rewrite-card">
+        <h3>Suggested rewrites</h3>
+        <div id="rewrites"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const MIN_WORDS = 100;
+    const HISTORY_KEY = 'resume_matcher_history';
+    const MAX_HISTORY = 5;
+
+    let currentResult = null;
+    let activeHistoryId = null;
+
+    const BREAKDOWN_LABELS = {
+      keyword_match: 'Keyword match',
+      experience_alignment: 'Experience alignment',
+      skills_coverage: 'Skills coverage',
+    };
+
+    const ERROR_MESSAGES = {
+      rate_limit: 'Rate limit reached. Please wait a minute and try again.',
+      network: 'Network error — could not reach the server. Check your connection and that Flask is running.',
+      parse_error: 'The model returned malformed data. Please try again.',
+      validation: 'Invalid input. Please check your resume and job description.',
+      auth: 'Server API key is invalid or missing.',
+      config: 'Server is not configured. Add ANTHROPIC_API_KEY to .env.',
+      bad_request: 'The request was rejected. Your input may be too long.',
+      api_error: 'The AI service returned an error. Please try again.',
+      unknown: 'Something went wrong. Please try again.',
+    };
+
+    function esc(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function wordCount(text) {
+      return text.trim().split(/\s+/).filter(Boolean).length;
+    }
+
+    function show(id) { document.getElementById(id).classList.remove('hidden'); }
+    function hide(id) { document.getElementById(id).classList.add('hidden'); }
+    function setText(id, val) { document.getElementById(id).textContent = val; }
+
+    function updateWordHints() {
+      const resumeWords = wordCount(document.getElementById('resume').value);
+      const jobWords = wordCount(document.getElementById('jobdesc').value);
+      const resumeHint = document.getElementById('resume-hint');
+      const jobHint = document.getElementById('jobdesc-hint');
+
+      resumeHint.textContent = `${resumeWords} word${resumeWords !== 1 ? 's' : ''}`;
+      jobHint.textContent = `${jobWords} word${jobWords !== 1 ? 's' : ''}`;
+
+      resumeHint.classList.toggle('warn', resumeWords > 0 && resumeWords < MIN_WORDS);
+      jobHint.classList.toggle('warn', jobWords > 0 && jobWords < MIN_WORDS);
+    }
+
+    function checkInputWarnings(resume, jobdesc) {
+      const warnings = [];
+      const rw = wordCount(resume);
+      const jw = wordCount(jobdesc);
+      if (rw < MIN_WORDS) warnings.push(`Resume is only ${rw} words (recommend at least ${MIN_WORDS}).`);
+      if (jw < MIN_WORDS) warnings.push(`Job description is only ${jw} words (recommend at least ${MIN_WORDS}).`);
+      return warnings;
+    }
+
+    function showError(message, errorType) {
+      const errEl = document.getElementById('error-msg');
+      errEl.textContent = ERROR_MESSAGES[errorType] || message || ERROR_MESSAGES.unknown;
+      show('error-msg');
+    }
+
+    function drawDial(pct, color) {
+      const canvas = document.getElementById('dial');
+      const ctx = canvas.getContext('2d');
+      const cx = 60, cy = 60, r = 50, lw = 10;
+      const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+      const trackColor = isDark ? '#2c2c2a' : '#e1e0d9';
+
+      ctx.clearRect(0, 0, 120, 120);
+      ctx.lineCap = 'round';
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 2.25);
+      ctx.strokeStyle = trackColor;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      if (pct > 0) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 0.75 + Math.PI * 1.5 * pct);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lw;
+        ctx.stroke();
+      }
+    }
+
+    function animateDial(targetPct, color) {
+      let current = 0;
+      const steps = 45;
+      const increment = targetPct / steps;
+      const el = document.getElementById('dial-number');
+      const interval = setInterval(() => {
+        current = Math.min(current + increment, targetPct);
+        drawDial(current, color);
+        el.textContent = Math.round(current * 100) + '%';
+        if (current >= targetPct) clearInterval(interval);
+      }, 16);
+    }
+
+    function scoreColor(score) {
+      if (score >= 0.75) return '#1baf7a';
+      if (score >= 0.50) return '#eda100';
+      return '#e34948';
+    }
+
+    function scoreVerdict(score) {
+      if (score >= 0.85) return 'Strong match';
+      if (score >= 0.70) return 'Good match';
+      if (score >= 0.50) return 'Partial match';
+      if (score >= 0.30) return 'Weak match';
+      return 'Poor match';
+    }
+
+    function renderBreakdown(breakdown) {
+      const el = document.getElementById('score-breakdown');
+      if (!breakdown || typeof breakdown !== 'object') {
+        el.innerHTML = '';
+        return;
+      }
+
+      const items = Object.entries(breakdown).map(([key, val]) => {
+        const label = BREAKDOWN_LABELS[key] || key.replace(/_/g, ' ');
+        const score = Math.min(100, Math.max(0, val.score || 0));
+        const weight = val.weight || 0;
+        const detail = esc(val.detail || '');
+        const color = scoreColor(score / 100);
+        return `
+          <div class="breakdown-item">
+            <div class="breakdown-header">
+              <span class="breakdown-label">${esc(label)} (${weight}% weight)</span>
+              <span class="breakdown-score">${score}%</span>
+            </div>
+            <div class="breakdown-bar">
+              <div class="breakdown-fill" style="width:${score}%;background:${color}"></div>
+            </div>
+            <div class="breakdown-detail">${detail}</div>
+          </div>`;
+      }).join('');
+
+      el.innerHTML = `<h4>How the score was calculated</h4>${items}`;
+    }
+
+    function renderResults(r) {
+      currentResult = r;
+      const score = Math.min(100, Math.max(0, r.score || 0));
+      const pct = score / 100;
+      const color = scoreColor(pct);
+
+      const verdict = document.getElementById('score-verdict');
+      verdict.textContent = scoreVerdict(pct);
+      verdict.style.color = color;
+      setText('score-summary', r.summary || '');
+
+      renderBreakdown(r.score_breakdown);
+
+      document.getElementById('kw-present').innerHTML =
+        (r.keywords_present || []).map(k => `<span class="kw present">${esc(k)}</span>`).join('');
+
+      document.getElementById('kw-missing').innerHTML =
+        (r.keywords_missing || []).map(k => `<span class="kw missing">${esc(k)}</span>`).join('');
+
+      document.getElementById('gap-list').innerHTML =
+        (r.gaps || []).map(g =>
+          `<li><i class="ti ti-circle-x icon-gap"></i><span>${esc(g)}</span></li>`
+        ).join('');
+
+      document.getElementById('strength-list').innerHTML =
+        (r.strengths || []).map(s =>
+          `<li><i class="ti ti-circle-check icon-strength"></i><span>${esc(s)}</span></li>`
+        ).join('');
+
+      document.getElementById('rewrites').innerHTML =
+        (r.rewrites || []).map(rw => `
+          <div class="rewrite-item">
+            <div class="rewrite-section-label">${esc(rw.section)}</div>
+            <div class="rewrite-direction">Before</div>
+            <div class="rewrite-before">${esc(rw.before)}</div>
+            <div class="rewrite-direction">After</div>
+            <div class="rewrite-after">${esc(rw.after)}</div>
+          </div>
+        `).join('');
+
+      show('results');
+      animateDial(pct, color);
+    }
+
+    async function analyze() {
+      const resume = document.getElementById('resume').value.trim();
+      const jobdesc = document.getElementById('jobdesc').value.trim();
+      const warnEl = document.getElementById('warn-msg');
+
+      hide('error-msg');
+      hide('warn-msg');
+
+      if (!resume || !jobdesc) {
+        showError('Please paste both your resume and the job description.', 'validation');
+        return;
+      }
+
+      const warnings = checkInputWarnings(resume, jobdesc);
+      if (warnings.length) {
+        warnEl.textContent = warnings.join(' ') + ' Analysis may be less accurate.';
+        show('warn-msg');
+      }
+
+      const btn = document.getElementById('analyze-btn');
+      btn.disabled = true;
+      hide('results');
+      activeHistoryId = null;
+      renderHistoryBar();
+
+      setText('stream-preview', '');
+      setText('stream-status', '');
+      setText('loading-label', 'Analyzing your resume…');
+      show('loading');
+
+      try {
+        const res = await fetch('/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resume, job_description: jobdesc }),
+        });
+
+        const contentType = res.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          throw { message: data.error, errorType: data.error_type || 'unknown' };
+        }
+
+        if (!res.ok) {
+          throw { message: 'Server error', errorType: 'unknown' };
+        }
+
+        await consumeStream(res.body.getReader(), resume, jobdesc);
+
+      } catch (err) {
+        if (err.errorType) {
+          showError(err.message, err.errorType);
+        } else if (err.name === 'TypeError') {
+          showError(err.message, 'network');
+        } else {
+          showError(err.message, 'unknown');
+        }
+      } finally {
+        hide('loading');
+        btn.disabled = false;
+      }
+    }
+
+    async function consumeStream(reader, resume, jobdesc) {
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let streamedChars = 0;
+      const previewEl = document.getElementById('stream-preview');
+      const statusEl = document.getElementById('stream-status');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let event;
+          try {
+            event = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
+
+          if (event.type === 'chunk') {
+            streamedChars += event.text.length;
+            previewEl.textContent += event.text;
+            previewEl.scrollTop = previewEl.scrollHeight;
+            statusEl.textContent = `Received ${streamedChars.toLocaleString()} characters…`;
+          } else if (event.type === 'complete') {
+            renderResults(event.result);
+            saveToHistory(resume, jobdesc, event.result);
+            statusEl.textContent = 'Analysis complete.';
+          } else if (event.type === 'error') {
+            throw { message: event.error, errorType: event.error_type || 'unknown' };
+          }
+        }
+      }
+    }
+
+    /* ── History ── */
+    function loadHistory() {
+      try {
+        return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      } catch {
+        return [];
+      }
+    }
+
+    function saveToHistory(resume, jobdesc, result) {
+      const history = loadHistory();
+      const entry = {
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+        resumePreview: resume.slice(0, 80),
+        jobPreview: jobdesc.slice(0, 80),
+        result,
+      };
+      history.unshift(entry);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+      activeHistoryId = entry.id;
+      renderHistoryBar();
+    }
+
+    function renderHistoryBar() {
+      const history = loadHistory();
+      const bar = document.getElementById('history-bar');
+      const pills = document.getElementById('history-pills');
+
+      if (!history.length) {
+        hide('history-bar');
+        return;
+      }
+
+      show('history-bar');
+      pills.innerHTML = history.map((h, i) => {
+        const date = new Date(h.timestamp);
+        const label = date.toLocaleString(undefined, {
+          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+        });
+        const score = h.result?.score ?? '?';
+        const active = h.id === activeHistoryId ? ' active' : '';
+        return `<button class="history-pill${active}" onclick="loadHistoryEntry(${h.id})" title="${esc(h.jobPreview)}">#${history.length - i} · ${score}% · ${esc(label)}</button>`;
+      }).join('');
+    }
+
+    function loadHistoryEntry(id) {
+      const entry = loadHistory().find(h => h.id === id);
+      if (!entry) return;
+      activeHistoryId = id;
+      renderHistoryBar();
+      renderResults(entry.result);
+    }
+
+    /* ── Export ── */
+    function buildExportText() {
+      if (!currentResult) return '';
+      const r = currentResult;
+      const lines = [
+        'RESUME MATCH ANALYSIS',
+        '=====================',
+        '',
+        `Match Score: ${r.score}%`,
+        `Verdict: ${scoreVerdict((r.score || 0) / 100)}`,
+        '',
+        'Summary',
+        '-------',
+        r.summary || '',
+        '',
+      ];
+
+      if (r.score_breakdown) {
+        lines.push('Score Breakdown', '---------------');
+        for (const [key, val] of Object.entries(r.score_breakdown)) {
+          const label = BREAKDOWN_LABELS[key] || key;
+          lines.push(`${label} (${val.weight}% weight): ${val.score}% — ${val.detail || ''}`);
+        }
+        lines.push('');
+      }
+
+      lines.push('Keywords Found', '--------------', ...(r.keywords_present || []), '');
+      lines.push('Keywords to Add', '---------------', ...(r.keywords_missing || []), '');
+      lines.push('Key Gaps', '--------', ...(r.gaps || []).map(g => `• ${g}`), '');
+      lines.push('Strengths', '---------', ...(r.strengths || []).map(s => `• ${s}`), '');
+
+      if (r.rewrites?.length) {
+        lines.push('Suggested Rewrites', '------------------');
+        for (const rw of r.rewrites) {
+          lines.push(`\n[${rw.section}]`);
+          lines.push(`Before: ${rw.before}`);
+          lines.push(`After:  ${rw.after}`);
+        }
+      }
+
+      return lines.join('\n');
+    }
+
+    function exportText() {
+      const text = buildExportText();
+      if (!text) return;
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      downloadBlob(blob, `resume-match-${Date.now()}.txt`);
+    }
+
+    function exportPDF() {
+      if (!currentResult || !window.jspdf) return;
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+      const margin = 48;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const maxWidth = pageWidth - margin * 2;
+      let y = margin;
+
+      function addLine(text, opts = {}) {
+        const { size = 11, bold = false, gap = 14 } = opts;
+        doc.setFont('helvetica', bold ? 'bold' : 'normal');
+        doc.setFontSize(size);
+        const lines = doc.splitTextToSize(text, maxWidth);
+        for (const line of lines) {
+          if (y > doc.internal.pageSize.getHeight() - margin) {
+            doc.addPage();
+            y = margin;
+          }
+          doc.text(line, margin, y);
+          y += gap;
+        }
+      }
+
+      addLine('Resume Match Analysis', { size: 18, bold: true, gap: 22 });
+      addLine(`Match Score: ${currentResult.score}% — ${scoreVerdict((currentResult.score || 0) / 100)}`, { bold: true });
+      addLine(currentResult.summary || '', { gap: 18 });
+
+      if (currentResult.score_breakdown) {
+        addLine('Score Breakdown', { bold: true, gap: 16 });
+        for (const [key, val] of Object.entries(currentResult.score_breakdown)) {
+          const label = BREAKDOWN_LABELS[key] || key;
+          addLine(`${label} (${val.weight}%): ${val.score}% — ${val.detail || ''}`);
+        }
+        y += 4;
+      }
+
+      addLine('Keywords Found: ' + (currentResult.keywords_present || []).join(', '));
+      addLine('Keywords to Add: ' + (currentResult.keywords_missing || []).join(', '), { gap: 18 });
+
+      addLine('Key Gaps', { bold: true, gap: 16 });
+      for (const g of currentResult.gaps || []) addLine(`• ${g}`);
+      y += 4;
+
+      addLine('Strengths', { bold: true, gap: 16 });
+      for (const s of currentResult.strengths || []) addLine(`• ${s}`);
+      y += 4;
+
+      if (currentResult.rewrites?.length) {
+        addLine('Suggested Rewrites', { bold: true, gap: 16 });
+        for (const rw of currentResult.rewrites) {
+          addLine(`[${rw.section}]`, { bold: true, gap: 14 });
+          addLine(`Before: ${rw.before}`);
+          addLine(`After: ${rw.after}`, { gap: 18 });
+        }
+      }
+
+      doc.save(`resume-match-${Date.now()}.pdf`);
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    /* Init */
+    updateWordHints();
+    renderHistoryBar();
+    drawDial(0, scoreColor(0));
+  </script>
+</body>
+</html>
