@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: resume-matcher
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: FLASK_ENV
+        value: production
