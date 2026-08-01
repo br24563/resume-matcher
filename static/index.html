@@ -5,17 +5,187 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Resume Matcher — App</title>
   <style>
-    body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial; padding:2rem; }
-    pre { background:#f6f8fa; padding:1rem; border-radius:6px }
+    :root{--max-width:900px;--gap:1rem;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial}
+    body{font-family:var(--font,Inter,system-ui);background:#f6f8fa;margin:0;padding:2rem;display:flex;justify-content:center}
+    .container{max-width:var(--max-width);width:100%;background:#fff;border-radius:12px;padding:1.5rem;box-shadow:0 6px 18px rgba(15,23,42,0.08)}
+    h1{margin:0 0 0.5rem 0;font-size:1.4rem}
+    p.lead{margin:0 0 1rem 0;color:#475569}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+    label{display:block;font-weight:600;margin-bottom:0.25rem}
+    textarea{width:100%;height:240px;padding:0.75rem;border:1px solid #e6e9ee;border-radius:8px;font-family:monospace;resize:vertical}
+    select,input[type=checkbox]{margin-right:0.5rem}
+    .controls{display:flex;gap:0.5rem;align-items:center;margin:0.5rem 0 1rem 0}
+    button{background:#0366d6;color:#fff;border:none;padding:0.6rem 0.9rem;border-radius:8px;cursor:pointer}
+    button[disabled]{opacity:0.6;cursor:default}
+    .output{margin-top:1rem;background:#0f1724;color:#fff;padding:1rem;border-radius:8px;min-height:120px;white-space:pre-wrap;overflow:auto}
+    .meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem}
+    .small{font-size:0.85rem;color:#64748b}
+    .link{color:#0366d6;text-decoration:none}
+    @media (max-width:800px){.grid{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-  <h1>Resume Matcher App</h1>
-  <p>If you see this page, the static app is being served correctly.</p>
-  <p>Use the API endpoints under <code>/analyze</code>, <code>/extract-text</code>, and <code>/scrape-job</code>.</p>
-  <h2>Quick test</h2>
-  <pre>
-  curl -sS -X GET /health http://localhost:$PORT || curl -i https://resume-matcher-9kmp.onrender.com/
-  </pre>
+  <div class="container">
+    <div class="meta">
+      <div>
+        <h1>Resume Matcher — App</h1>
+        <p class="lead">Paste a resume and a job description, then click Analyze. This calls the server-side /analyze endpoint and streams results.</p>
+      </div>
+      <div class="small">Service: <a class="link" href="/health" target="_blank">/health</a></div>
+    </div>
+
+    <form id="matcher">
+      <div class="grid">
+        <div>
+          <label for="resume">Resume (paste text or extracted content)</label>
+          <textarea id="resume" placeholder="Paste your resume here"></textarea>
+        </div>
+        <div>
+          <label for="job">Job description</label>
+          <textarea id="job" placeholder="Paste the job description here"></textarea>
+        </div>
+      </div>
+
+      <div class="controls">
+        <label for="mode">Mode:</label>
+        <select id="mode">
+          <option value="standard">Standard</option>
+          <option value="ats">ATS</option>
+        </select>
+
+        <label for="model">Model (optional):</label>
+        <select id="model">
+          <option value="">default</option>
+          <option value="llama-3.3-70b">llama-3.3-70b</option>
+          <option value="llama-3.1-8b">llama-3.1-8b</option>
+        </select>
+
+        <button id="submit">Analyze</button>
+
+        <div style="margin-left:auto" class="small">Logs: <a class="link" href="/stats" target="_blank">/stats</a></div>
+      </div>
+    </form>
+
+    <div class="small">Tip: For quick testing, paste small sample text. Large prompts are truncated to 4000 chars by the server.</div>
+
+    <div id="output" class="output">Results will appear here (streamed).</div>
+  </div>
+
+  <script>
+    const form = document.getElementById('matcher');
+    const resumeEl = document.getElementById('resume');
+    const jobEl = document.getElementById('job');
+    const modeEl = document.getElementById('mode');
+    const modelEl = document.getElementById('model');
+    const submitBtn = document.getElementById('submit');
+    const output = document.getElementById('output');
+
+    function appendLine(text){
+      output.textContent += text + '\n';
+      output.scrollTop = output.scrollHeight;
+    }
+
+    async function analyze(ev){
+      ev?.preventDefault();
+      output.textContent = '';
+      submitBtn.disabled = true;
+      appendLine('Connecting to /analyze...');
+
+      const payload = {
+        resume: resumeEl.value || '',
+        job_description: jobEl.value || '',
+        mode: modeEl.value || 'standard',
+        model: modelEl.value || ''
+      };
+
+      try{
+        const resp = await fetch('/analyze', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+
+        if(!resp.ok){
+          const err = await resp.json().catch(()=>null);
+          appendLine('Server error: ' + (err?.error || resp.status + ' ' + resp.statusText));
+          submitBtn.disabled = false;
+          return;
+        }
+
+        // Stream-reading the text/event-stream response
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        appendLine('Streaming response...');
+
+        while(true){
+          const {done, value} = await reader.read();
+          if(done) break;
+          buf += decoder.decode(value, {stream:true});
+
+          // Split on double-newline which separates SSE messages
+          let parts = buf.split('\n\n');
+          buf = parts.pop(); // keep remainder
+          for(const part of parts){
+            const line = part.trim();
+            if(!line) continue;
+            // lines may be 'data: {...}' or multiple lines
+            for(const l of line.split('\n')){
+              if(l.startsWith('data:')){
+                const jsonText = l.slice(5).trim();
+                try{
+                  const obj = JSON.parse(jsonText);
+                  if(obj.type === 'chunk'){
+                    appendLine(obj.text);
+                  } else if(obj.type === 'complete'){
+                    appendLine('\n=== COMPLETE ===\n' + JSON.stringify(obj.result, null, 2));
+                  } else if(obj.type === 'error'){
+                    appendLine('\n=== ERROR ===\n' + (obj.error || JSON.stringify(obj)));
+                  } else {
+                    appendLine(JSON.stringify(obj));
+                  }
+                }catch(err){
+                  // not JSON — just print
+                  appendLine(jsonText);
+                }
+              } else {
+                // fallback text
+                appendLine(l);
+              }
+            }
+          }
+        }
+
+        // consume any remainder
+        if(buf){
+          const rem = buf.trim();
+          if(rem.startsWith('data:')){
+            const jsonText = rem.slice(5).trim();
+            try{ const obj = JSON.parse(jsonText); appendLine(JSON.stringify(obj, null, 2)); }catch(e){ appendLine(rem); }
+          } else {
+            appendLine(rem);
+          }
+        }
+
+        appendLine('\nStream ended.');
+      }catch(e){
+        appendLine('Request failed: ' + e.message);
+      }finally{
+        submitBtn.disabled = false;
+      }
+    }
+
+    form.addEventListener('submit', analyze);
+
+    // Optional: small keyboard shortcut to focus job textarea
+    document.addEventListener('keydown', (e)=>{
+      if(e.ctrlKey && e.key === '1') resumeEl.focus();
+      if(e.ctrlKey && e.key === '2') jobEl.focus();
+    });
+
+    // Prefill with tiny samples for convenience
+    resumeEl.value = "Senior software engineer with 5 years experience in Python, Flask, REST APIs, and deploying to cloud platforms.";
+    jobEl.value = "We are hiring a backend engineer with experience in Python, Flask, REST APIs, cloud deployments, and text processing.";
+  </script>
 </body>
 </html>
