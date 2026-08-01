@@ -7,7 +7,7 @@ services:
     startCommand: gunicorn app:app
     healthCheckPath: /health
     envVars:
-      - key: ANTHROPIC_API_KEY
+      - key: GROQ_API_KEY
         sync: false
       - key: FLASK_ENV
         value: production

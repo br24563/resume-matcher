@@ -20,7 +20,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Open `.env` and replace `your_api_key_here` with your [Anthropic API key](https://console.anthropic.com/).
+Open `.env` and replace `your_api_key_here` with your free API key from [console.groq.com → API Keys](https://console.groq.com/keys).
 
 **3. Run**
 
@@ -46,4 +46,4 @@ Open [http://localhost:5000](http://localhost:5000) in your browser.
 
 ## Deploying
 
-For a public deployment, set `ANTHROPIC_API_KEY` as an environment variable on your host (Railway, Render, Fly.io, etc.) rather than using a `.env` file. The `.env` approach is for local development only.
+For a public deployment, set `GROQ_API_KEY` as an environment variable on your host (Railway, Render, Fly.io, etc.) rather than using a `.env` file. The `.env` approach is for local development only.

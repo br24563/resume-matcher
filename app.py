@@ -2,10 +2,10 @@ import json
 import os
 import re
 
-import anthropic
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
+from groq import Groq
 
 load_dotenv()
 
@@ -96,10 +96,10 @@ Rules:
 
 
 def _get_client():
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         return None
-    return anthropic.Anthropic(api_key=api_key)
+    return Groq(api_key=api_key)
 
 
 def _sanitize_text(text: str) -> str:
@@ -120,51 +120,20 @@ def _error_payload(message: str, error_type: str, status: int = 500):
     return jsonify({"error": message, "error_type": error_type}), status
 
 
-def _map_api_error(exc: Exception) -> tuple[str, str, int]:
-    if isinstance(exc, anthropic.RateLimitError):
-        return (
-            "Rate limit reached. Please wait a minute and try again.",
-            "rate_limit",
-            429,
-        )
-    if isinstance(exc, anthropic.APIConnectionError):
-        return (
-            "Could not reach the Anthropic API. Check your internet connection and try again.",
-            "network",
-            502,
-        )
-    if isinstance(exc, anthropic.AuthenticationError):
-        return (
-            "Invalid API key. Check ANTHROPIC_API_KEY in your .env file.",
-            "auth",
-            503,
-        )
-    if isinstance(exc, anthropic.BadRequestError):
-        return (
-            "The request was rejected by the API. Your input may be too long or malformed.",
-            "bad_request",
-            400,
-        )
-    if isinstance(exc, anthropic.APIError):
-        return (f"Anthropic API error: {exc}", "api_error", 502)
-    return (f"Unexpected error: {exc}", "unknown", 500)
-
-
 def _stream_analysis(client, system_prompt: str, user_message: str):
     def generate():
-        full_text = []
         try:
-            with client.messages.stream(
-                model="claude-sonnet-4-6",
-                max_tokens=2048,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_message}],
-            ) as stream:
-                for text in stream.text_stream:
-                    full_text.append(text)
-                    yield f"data: {json.dumps({'type': 'chunk', 'text': text})}\n\n"
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                max_tokens=1024,
+            )
+            raw = response.choices[0].message.content or ""
+            yield f"data: {json.dumps({'type': 'chunk', 'text': raw})}\n\n"
 
-            raw = "".join(full_text)
             try:
                 result = _parse_model_json(raw)
             except json.JSONDecodeError:
@@ -178,10 +147,6 @@ def _stream_analysis(client, system_prompt: str, user_message: str):
 
             yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
 
-        except anthropic.APIError as exc:
-            message, error_type, _ = _map_api_error(exc)
-            payload = {"type": "error", "error": message, "error_type": error_type}
-            yield f"data: {json.dumps(payload)}\n\n"
         except Exception as exc:
             payload = {
                 "type": "error",
@@ -216,7 +181,7 @@ def analyze():
     client = _get_client()
     if client is None:
         return _error_payload(
-            "Server is missing ANTHROPIC_API_KEY. Add it to your .env file.",
+            "Server is missing GROQ_API_KEY. Add it to your .env file.",
             "config",
             503,
         )
