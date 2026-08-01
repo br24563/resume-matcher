@@ -5,70 +5,100 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Resume Matcher — App</title>
   <style>
-    :root{--max-width:900px;--gap:1rem;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial}
-    body{font-family:var(--font,Inter,system-ui);background:#f6f8fa;margin:0;padding:2rem;display:flex;justify-content:center}
-    .container{max-width:var(--max-width);width:100%;background:#fff;border-radius:12px;padding:1.5rem;box-shadow:0 6px 18px rgba(15,23,42,0.08)}
-    h1{margin:0 0 0.5rem 0;font-size:1.4rem}
-    p.lead{margin:0 0 1rem 0;color:#475569}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+    :root{--max-width:1000px;--gap:1rem;--muted:#64748b;--brand:#0b63d6}
+    html,body{height:100%;margin:0;background:#f3f6f9;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial}
+    .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:3rem}
+    .card{width:100%;max-width:var(--max-width);background:#fff;border-radius:12px;padding:1.25rem;box-shadow:0 6px 30px rgba(11,24,37,0.08)}
+    .head{display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem}
+    h1{font-size:1.25rem;margin:0}
+    .muted{color:var(--muted);font-size:0.9rem}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin-top:0.5rem}
     label{display:block;font-weight:600;margin-bottom:0.25rem}
-    textarea{width:100%;height:240px;padding:0.75rem;border:1px solid #e6e9ee;border-radius:8px;font-family:monospace;resize:vertical}
-    select,input[type=checkbox]{margin-right:0.5rem}
-    .controls{display:flex;gap:0.5rem;align-items:center;margin:0.5rem 0 1rem 0}
-    button{background:#0366d6;color:#fff;border:none;padding:0.6rem 0.9rem;border-radius:8px;cursor:pointer}
-    button[disabled]{opacity:0.6;cursor:default}
-    .output{margin-top:1rem;background:#0f1724;color:#fff;padding:1rem;border-radius:8px;min-height:120px;white-space:pre-wrap;overflow:auto}
-    .meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem}
-    .small{font-size:0.85rem;color:#64748b}
-    .link{color:#0366d6;text-decoration:none}
-    @media (max-width:800px){.grid{grid-template-columns:1fr}}
+    textarea{width:100%;min-height:220px;padding:0.75rem;border:1px solid #e6e9ee;border-radius:8px;font-family:ui-monospace,Menlo,Monaco,monospace;resize:vertical}
+    .controls{display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.75rem}
+    select,input[type=checkbox],input[type=file]{margin-right:0.5rem}
+    .btn{background:var(--brand);color:#fff;border:none;padding:0.6rem 0.9rem;border-radius:8px;cursor:pointer}
+    .btn.ghost{background:transparent;color:var(--brand);border:1px solid #e6e9ee}
+    .btn[disabled]{opacity:0.6;cursor:default}
+    .small{font-size:0.85rem;color:var(--muted)}
+    .output{margin-top:1rem;border-radius:8px;overflow:auto;background:#0b1220;color:#e6eef8;padding:1rem;min-height:160px}
+    .meta{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+    .flex{display:flex;gap:0.5rem;align-items:center}
+    .spinner{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);border-top-color:#fff;animation:spin 1s linear infinite;display:inline-block}
+    .hidden{display:none}
+    .hint{margin-top:0.5rem;color:var(--muted);font-size:0.88rem}
+    details{margin-top:0.5rem}
+    pre{white-space:pre-wrap;margin:0;font-size:0.9rem}
+    .file-row{display:flex;gap:0.5rem;align-items:center}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}textarea{min-height:180px}}
+    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="meta">
-      <div>
-        <h1>Resume Matcher — App</h1>
-        <p class="lead">Paste a resume and a job description, then click Analyze. This calls the server-side /analyze endpoint and streams results.</p>
-      </div>
-      <div class="small">Service: <a class="link" href="/health" target="_blank">/health</a></div>
-    </div>
-
-    <form id="matcher">
-      <div class="grid">
+  <div class="wrap">
+    <main class="card" role="main" aria-labelledby="title">
+      <div class="head">
         <div>
-          <label for="resume">Resume (paste text or extracted content)</label>
-          <textarea id="resume" placeholder="Paste your resume here"></textarea>
+          <h1 id="title">Resume Matcher</h1>
+          <div class="muted">Paste a resume and a job description, or upload a resume file. Click Analyze to run.</div>
         </div>
-        <div>
-          <label for="job">Job description</label>
-          <textarea id="job" placeholder="Paste the job description here"></textarea>
+        <div style="margin-left:auto;text-align:right">
+          <div class="small">Service: <a href="/health" class="small">/health</a></div>
+          <div class="small">Logs: <a href="/stats" class="small">/stats</a></div>
         </div>
       </div>
 
-      <div class="controls">
-        <label for="mode">Mode:</label>
-        <select id="mode">
-          <option value="standard">Standard</option>
-          <option value="ats">ATS</option>
-        </select>
+      <form id="matcher" aria-describedby="hint">
+        <div class="file-row" style="margin-bottom:0.5rem">
+          <label for="file" class="small" style="font-weight:600">Upload resume (.txt, .pdf, .docx)</label>
+          <input id="file" name="file" type="file" accept=".txt,.pdf,.docx">
+          <button type="button" id="clearFile" class="btn ghost" style="padding:0.4rem 0.6rem">Clear</button>
+          <div style="margin-left:auto" class="small">Mode:
+            <select id="mode">
+              <option value="standard">Standard</option>
+              <option value="ats">ATS</option>
+            </select>
+          </div>
+        </div>
 
-        <label for="model">Model (optional):</label>
-        <select id="model">
-          <option value="">default</option>
-          <option value="llama-3.3-70b">llama-3.3-70b</option>
-          <option value="llama-3.1-8b">llama-3.1-8b</option>
-        </select>
+        <div class="grid">
+          <div>
+            <label for="resume">Resume (paste text or use file upload)</label>
+            <textarea id="resume" name="resume" placeholder="Paste your resume here" aria-label="Resume"></textarea>
+          </div>
 
-        <button id="submit">Analyze</button>
+          <div>
+            <label for="job">Job description</label>
+            <textarea id="job" name="job_description" placeholder="Paste the job description here" aria-label="Job description"></textarea>
+          </div>
+        </div>
 
-        <div style="margin-left:auto" class="small">Logs: <a class="link" href="/stats" target="_blank">/stats</a></div>
-      </div>
-    </form>
+        <div class="controls">
+          <div class="flex">
+            <label for="model" class="small" style="font-weight:600">Model (optional)</label>
+            <select id="model">
+              <option value="">default</option>
+              <option value="llama-3.3-70b">llama-3.3-70b</option>
+              <option value="llama-3.1-8b">llama-3.1-8b</option>
+            </select>
+          </div>
 
-    <div class="small">Tip: For quick testing, paste small sample text. Large prompts are truncated to 4000 chars by the server.</div>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <button id="analyze" class="btn" type="submit">Analyze</button>
+            <button id="clear" type="button" class="btn ghost">Clear</button>
+          </div>
 
-    <div id="output" class="output">Results will appear here (streamed).</div>
+          <div style="margin-left:auto" class="small">Results: streaming from server</div>
+        </div>
+
+        <div id="hint" class="hint">Tip: Keep inputs concise while testing. Server truncates long inputs to 4000 characters.</div>
+
+        <div id="output" class="output" role="status" aria-live="polite">
+          <div id="streamArea" style="margin-bottom:0.5rem"></div>
+          <details id="finalDetails" class="hidden"><summary>Final result (JSON)</summary><pre id="finalJSON"></pre></details>
+        </div>
+      </form>
+    </main>
   </div>
 
   <script>
@@ -77,115 +107,178 @@
     const jobEl = document.getElementById('job');
     const modeEl = document.getElementById('mode');
     const modelEl = document.getElementById('model');
-    const submitBtn = document.getElementById('submit');
-    const output = document.getElementById('output');
+    const analyzeBtn = document.getElementById('analyze');
+    const clearBtn = document.getElementById('clear');
+    const clearFileBtn = document.getElementById('clearFile');
+    const fileInput = document.getElementById('file');
+    const streamArea = document.getElementById('streamArea');
+    const finalDetails = document.getElementById('finalDetails');
+    const finalJSON = document.getElementById('finalJSON');
 
-    function appendLine(text){
-      output.textContent += text + '\n';
-      output.scrollTop = output.scrollHeight;
+    function setLoading(loading){
+      analyzeBtn.disabled = loading;
+      if(loading){
+        analyzeBtn.dataset.orig = analyzeBtn.textContent;
+        analyzeBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Running';
+      } else {
+        analyzeBtn.textContent = analyzeBtn.dataset.orig || 'Analyze';
+      }
     }
+
+    function appendStream(text){
+      const p = document.createElement('div');
+      p.textContent = text;
+      streamArea.appendChild(p);
+      streamArea.scrollTop = streamArea.scrollHeight;
+    }
+
+    function clearOutput(){
+      streamArea.innerHTML = '';
+      finalJSON.textContent = '';
+      finalDetails.classList.add('hidden');
+    }
+
+    clearBtn.addEventListener('click', ()=>{
+      resumeEl.value = '';
+      jobEl.value = '';
+      clearOutput();
+    });
+
+    clearFileBtn.addEventListener('click', ()=>{
+      fileInput.value = '';
+    });
+
+    fileInput.addEventListener('change', async (e)=>{
+      if(!fileInput.files || !fileInput.files.length) return;
+      const f = fileInput.files[0];
+      // simple client-side size guard
+      if(f.size > 5 * 1024 * 1024){
+        alert('File too large (max 5MB)');
+        fileInput.value = '';
+        return;
+      }
+      // upload to /extract-text
+      const fd = new FormData();
+      fd.append('file', f);
+      clearOutput();
+      appendStream('Uploading and extracting text...');
+      try{
+        const res = await fetch('/extract-text', {method:'POST', body:fd});
+        if(!res.ok){
+          const err = await res.json().catch(()=>null);
+          appendStream('Error: ' + (err?.error || res.status + ' ' + res.statusText));
+          return;
+        }
+        const data = await res.json();
+        if(data.text){
+          resumeEl.value = data.text;
+          appendStream('Extracted text placed into Resume field.');
+        } else {
+          appendStream('No text extracted.');
+        }
+      }catch(err){
+        appendStream('Upload failed: ' + err.message);
+      }
+    });
 
     async function analyze(ev){
       ev?.preventDefault();
-      output.textContent = '';
-      submitBtn.disabled = true;
-      appendLine('Connecting to /analyze...');
+      clearOutput();
+      // basic validation
+      if(!resumeEl.value.trim() || !jobEl.value.trim()){
+        appendStream('Please provide both resume and job description (you can upload a resume file).');
+        return;
+      }
+      setLoading(true);
 
       const payload = {
-        resume: resumeEl.value || '',
-        job_description: jobEl.value || '',
-        mode: modeEl.value || 'standard',
+        resume: resumeEl.value.trim(),
+        job_description: jobEl.value.trim(),
+        mode: modeEl.value,
         model: modelEl.value || ''
       };
 
       try{
         const resp = await fetch('/analyze', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
           body: JSON.stringify(payload)
         });
 
         if(!resp.ok){
           const err = await resp.json().catch(()=>null);
-          appendLine('Server error: ' + (err?.error || resp.status + ' ' + resp.statusText));
-          submitBtn.disabled = false;
+          appendStream('Server error: ' + (err?.error || resp.status + ' ' + resp.statusText));
+          setLoading(false);
           return;
         }
 
-        // Stream-reading the text/event-stream response
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
-        appendLine('Streaming response...');
+
+        appendStream('Connected — streaming response...');
 
         while(true){
           const {done, value} = await reader.read();
           if(done) break;
           buf += decoder.decode(value, {stream:true});
 
-          // Split on double-newline which separates SSE messages
+          // process SSE-style 'data: ...\n\n' messages
           let parts = buf.split('\n\n');
-          buf = parts.pop(); // keep remainder
+          buf = parts.pop();
           for(const part of parts){
-            const line = part.trim();
-            if(!line) continue;
-            // lines may be 'data: {...}' or multiple lines
-            for(const l of line.split('\n')){
-              if(l.startsWith('data:')){
-                const jsonText = l.slice(5).trim();
+            const lines = part.split('\n');
+            for(const line of lines){
+              if(!line) continue;
+              if(line.startsWith('data:')){
+                const payload = line.slice(5).trim();
                 try{
-                  const obj = JSON.parse(jsonText);
+                  const obj = JSON.parse(payload);
                   if(obj.type === 'chunk'){
-                    appendLine(obj.text);
+                    appendStream(obj.text);
                   } else if(obj.type === 'complete'){
-                    appendLine('\n=== COMPLETE ===\n' + JSON.stringify(obj.result, null, 2));
+                    appendStream('\n--- Complete result received ---');
+                    finalJSON.textContent = JSON.stringify(obj.result, null, 2);
+                    finalDetails.classList.remove('hidden');
                   } else if(obj.type === 'error'){
-                    appendLine('\n=== ERROR ===\n' + (obj.error || JSON.stringify(obj)));
+                    appendStream('Error: ' + (obj.error || JSON.stringify(obj)));
                   } else {
-                    appendLine(JSON.stringify(obj));
+                    appendStream(JSON.stringify(obj));
                   }
-                }catch(err){
-                  // not JSON — just print
-                  appendLine(jsonText);
+                }catch(e){
+                  appendStream(payload);
                 }
               } else {
-                // fallback text
-                appendLine(l);
+                appendStream(line);
               }
             }
           }
         }
 
-        // consume any remainder
         if(buf){
+          // leftover
           const rem = buf.trim();
           if(rem.startsWith('data:')){
-            const jsonText = rem.slice(5).trim();
-            try{ const obj = JSON.parse(jsonText); appendLine(JSON.stringify(obj, null, 2)); }catch(e){ appendLine(rem); }
+            const p = rem.slice(5).trim();
+            try{ const obj = JSON.parse(p); finalJSON.textContent = JSON.stringify(obj, null, 2); finalDetails.classList.remove('hidden'); }
+            catch(e){ appendStream(rem); }
           } else {
-            appendLine(rem);
+            appendStream(rem);
           }
         }
 
-        appendLine('\nStream ended.');
-      }catch(e){
-        appendLine('Request failed: ' + e.message);
+        appendStream('\nStream ended.');
+      }catch(err){
+        appendStream('Request failed: ' + err.message);
       }finally{
-        submitBtn.disabled = false;
+        setLoading(false);
       }
     }
 
     form.addEventListener('submit', analyze);
 
-    // Optional: small keyboard shortcut to focus job textarea
-    document.addEventListener('keydown', (e)=>{
-      if(e.ctrlKey && e.key === '1') resumeEl.focus();
-      if(e.ctrlKey && e.key === '2') jobEl.focus();
-    });
-
-    // Prefill with tiny samples for convenience
-    resumeEl.value = "Senior software engineer with 5 years experience in Python, Flask, REST APIs, and deploying to cloud platforms.";
-    jobEl.value = "We are hiring a backend engineer with experience in Python, Flask, REST APIs, cloud deployments, and text processing.";
+    // Accessibility: focus resume on load
+    resumeEl.focus();
   </script>
 </body>
 </html>
