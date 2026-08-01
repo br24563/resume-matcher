@@ -2,22 +2,33 @@ import io
 import json
 import os
 import re
+import time
+import base64
+from datetime import datetime, timezone
 
+import requests
+from bs4 import BeautifulSoup
 from docx import Document
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 from groq import Groq
 from pypdf import PdfReader
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
 app = Flask(__name__, static_folder="static")
 CORS(app)
 
+# Rate limiter (no default limits; apply per-route)
+limiter = Limiter(app, key_func=get_remote_address, headers_enabled=True)
+
 MAX_INPUT_CHARS = 4000
 MAX_FILE_SIZE = 5 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+USAGE_LOG = "usage.log"
 
 SYSTEM_PROMPT = """You are a professional resume analyst. Analyze how well a resume matches a job description.
 
@@ -156,11 +167,23 @@ def _error_payload(message: str, error_type: str, status: int = 500):
     return jsonify({"error": message, "error_type": error_type}), status
 
 
-def _stream_analysis(client, system_prompt: str, user_message: str):
+def _log_usage(endpoint: str, duration_ms: int):
+    try:
+        ts = datetime.now(timezone.utc).isoformat()
+        # Do not log any user content — just timestamp, endpoint, duration
+        with open(USAGE_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{ts}\t{endpoint}\t{duration_ms}\n")
+    except Exception:
+        pass
+
+
+def _stream_analysis(client, system_prompt: str, user_message: str, model: str = None):
     def generate():
+        start = time.monotonic()
         try:
+            model_name = model or "llama-3.3-70b-versatile"
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message},
@@ -168,6 +191,10 @@ def _stream_analysis(client, system_prompt: str, user_message: str):
                 max_tokens=1024,
             )
             raw = response.choices[0].message.content or ""
+            # log timing
+            duration_ms = int((time.monotonic() - start) * 1000)
+            _log_usage("/analyze", duration_ms)
+
             yield f"data: {json.dumps({'type': 'chunk', 'text': raw})}\n\n"
 
             try:
@@ -203,6 +230,12 @@ def _stream_analysis(client, system_prompt: str, user_message: str):
 
 
 @app.route("/")
+def root_landing():
+    # Serve landing page at root
+    return send_from_directory("static", "landing.html")
+
+
+@app.route("/app")
 def index():
     return send_from_directory("static", "index.html")
 
@@ -213,6 +246,7 @@ def health():
 
 
 @app.route("/extract-text", methods=["POST"])
+@limiter.limit("10 per hour")
 def extract_text():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded."}), 400
@@ -248,7 +282,62 @@ def extract_text():
     return jsonify({"text": text})
 
 
+@app.route("/scrape-job", methods=["POST"])
+@limiter.limit("10 per hour")
+def scrape_job():
+    if not request.is_json:
+        return _error_payload("Request must be JSON.", "validation", 400)
+    data = request.get_json(silent=True)
+    url = str(data.get("url", "")).strip()
+    if not url:
+        return _error_payload("URL is required.", "validation", 400)
+
+    try:
+        resp = requests.get(url, timeout=8, headers={"User-Agent": "resume-matcher/1.0"})
+        if resp.status_code != 200:
+            return _error_payload("Couldn't fetch this page.", "fetch_error", 422)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # Remove common boilerplate
+        for sel in soup.select('nav, footer, header, script, style, aside'):
+            sel.decompose()
+
+        # Try to find title
+        title = (soup.title.string if soup.title and soup.title.string else "").strip()
+        if not title:
+            h1 = soup.find(['h1'])
+            if h1 and h1.get_text(strip=True):
+                title = h1.get_text(strip=True)
+
+        # Try to extract main content
+        main = None
+        main_tag = soup.find('main')
+        if main_tag:
+            main = main_tag.get_text(separator='\n').strip()
+        if not main:
+            # common job posting container heuristics
+            candidates = soup.find_all(['div', 'section'])
+            best = ""
+            for c in candidates:
+                text = c.get_text(separator='\n').strip()
+                if len(text) > len(best):
+                    best = text
+            main = best
+
+        # Heuristic: require substantial text
+        if not main or len(main) < 200:
+            return jsonify({"error": "Couldn't extract this page — paste the description manually"}), 422
+
+        # Clean up whitespace
+        main = re.sub(r"\n{3,}", "\n\n", main)
+        main = re.sub(r"[ \t]+", " ", main).strip()
+
+        return jsonify({"title": title, "description": main})
+    except Exception:
+        return jsonify({"error": "Couldn't extract this page — paste the description manually"}), 422
+
+
 @app.route("/analyze", methods=["POST"])
+@limiter.limit("10 per hour")
 def analyze():
     client = _get_client()
     if client is None:
@@ -268,6 +357,7 @@ def analyze():
     resume = _sanitize_text(str(data.get("resume", "")))
     job_description = _sanitize_text(str(data.get("job_description", "")))
     mode = str(data.get("mode", "standard")).lower()
+    model_field = str(data.get("model", "")).strip()
 
     if not resume or not job_description:
         return _error_payload(
@@ -286,7 +376,111 @@ def analyze():
     system_prompt = ATS_SYSTEM_PROMPT if mode == "ats" else SYSTEM_PROMPT
     user_message = f"RESUME:\n{resume}\n\nJOB DESCRIPTION:\n{job_description}"
 
-    return _stream_analysis(client, system_prompt, user_message)
+    # Map frontend selection to groq model strings
+    model_map = {
+        "llama-3.3-70b": "llama-3.3-70b-versatile",
+        "llama-3.1-8b": "llama-3.1-8b",
+    }
+    model = model_map.get(model_field, None)
+
+    return _stream_analysis(client, system_prompt, user_message, model=model)
+
+
+@app.route("/interview-prep", methods=["POST"])
+@limiter.limit("10 per hour")
+def interview_prep():
+    client = _get_client()
+    if client is None:
+        return _error_payload(
+            "Server is missing GROQ_API_KEY. Add it to your .env file.",
+            "config",
+            503,
+        )
+
+    if not request.is_json:
+        return _error_payload("Request must be JSON.", "validation", 400)
+    data = request.get_json(silent=True)
+    resume = _sanitize_text(str(data.get("resume", "")))
+    job_description = _sanitize_text(str(data.get("job_description", "")))
+    model_field = str(data.get("model", "")).strip()
+
+    if not resume or not job_description:
+        return _error_payload("Both resume and job description are required.", "validation", 400)
+
+    prompt = (
+        "You are an interview coach. Given the resume and job description, generate 10 likely interview questions. "
+        "For each question return a concise bullet-point answer framework (not a full scripted answer). Return ONLY valid JSON:"
+        "{\"questions\":[{\"question\":\"...\",\"framework\":\"...\"}] }"
+        f"\n\nRESUME:\n{resume}\n\nJOB DESCRIPTION:\n{job_description}"
+    )
+
+    model_map = {
+        "llama-3.3-70b": "llama-3.3-70b-versatile",
+        "llama-3.1-8b": "llama-3.1-8b",
+    }
+    model = model_map.get(model_field, None)
+
+    try:
+        model_name = model or "llama-3.3-70b-versatile"
+        start = time.monotonic()
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are an interview coach. Provide JSON output as specified."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=800,
+        )
+        raw = response.choices[0].message.content or ""
+        duration_ms = int((time.monotonic() - start) * 1000)
+        _log_usage("/interview-prep", duration_ms)
+        parsed = _parse_model_json(raw)
+        return jsonify(parsed)
+    except json.JSONDecodeError:
+        return _error_payload("The model returned malformed JSON. Please try again.", "parse_error", 502)
+    except Exception as exc:
+        return _error_payload(f"Unexpected error: {exc}", "unknown", 500)
+
+
+@app.route("/stats", methods=["GET"])
+def stats():
+    today_count = 0
+    all_count = 0
+    total_ms = 0
+    entries = 0
+    today = datetime.now(timezone.utc).date()
+    try:
+        if os.path.exists(USAGE_LOG):
+            with open(USAGE_LOG, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split("\t")
+                    if len(parts) < 3:
+                        continue
+                    ts_str, endpoint, ms_str = parts[0], parts[1], parts[2]
+                    try:
+                        ts = datetime.fromisoformat(ts_str)
+                        ms = int(ms_str)
+                    except Exception:
+                        continue
+                    all_count += 1
+                    total_ms += ms
+                    entries += 1
+                    if ts.date() == today:
+                        today_count += 1
+    except Exception:
+        pass
+
+    avg = int(total_ms / entries) if entries else 0
+    return jsonify({"today": today_count, "all_time": all_count, "avg_response_ms": avg})
+
+
+# Custom handler for rate limit errors to return consistent JSON
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({"error": "Too many requests — try again in an hour"}), 429
 
 
 if __name__ == "__main__":
