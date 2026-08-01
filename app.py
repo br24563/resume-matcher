@@ -23,7 +23,7 @@ app = Flask(__name__, static_folder="static")
 CORS(app)
 
 # Rate limiter (no default limits; apply per-route)
-limiter = Limiter(app, key_func=get_remote_address, headers_enabled=True)
+limiter = Limiter(get_remote_address, app=app)
 
 MAX_INPUT_CHARS = 4000
 MAX_FILE_SIZE = 5 * 1024 * 1024
@@ -206,6 +206,7 @@ def _stream_analysis(client, system_prompt: str, user_message: str, model: str =
                     "error_type": "parse_error",
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
+
                 return
 
             yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
@@ -379,7 +380,7 @@ def analyze():
     # Map frontend selection to groq model strings
     model_map = {
         "llama-3.3-70b": "llama-3.3-70b-versatile",
-        "llama-3.1-8b": "llama-3.1-8b",
+        "llama-3.1-8b": "llama-3.1-8b-instant",
     }
     model = model_map.get(model_field, None)
 
@@ -416,7 +417,7 @@ def interview_prep():
 
     model_map = {
         "llama-3.3-70b": "llama-3.3-70b-versatile",
-        "llama-3.1-8b": "llama-3.1-8b",
+        "llama-3.1-8b": "llama-3.1-8b-instant",
     }
     model = model_map.get(model_field, None)
 
