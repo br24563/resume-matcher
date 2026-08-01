@@ -157,6 +157,42 @@
     .word-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
     .word-hint.warn { color: var(--warn-text); }
 
+    .file-upload { margin-top: 8px; }
+
+    .file-upload-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--accent-text);
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+
+    .file-upload-label:hover { color: var(--accent); }
+    .file-upload-input { display: none; }
+
+    .file-upload-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      margin-top: 6px;
+      color: var(--text-muted);
+    }
+
+    .file-upload-status.error { color: var(--danger-text); }
+
+    .spinner-sm {
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
     /* Compare jobs */
     .job-slots { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
 
@@ -592,11 +628,31 @@
         <div class="input-card">
           <label for="resume">Your resume</label>
           <textarea id="resume" placeholder="Paste your resume text here..." oninput="updateWordHints()"></textarea>
+          <div class="file-upload">
+            <label class="file-upload-label">
+              <input type="file" class="file-upload-input" accept=".pdf,.docx,.txt" data-target="resume" />
+              <i class="ti ti-upload"></i> Or upload a file
+            </label>
+            <div class="file-upload-status hidden">
+              <div class="spinner-sm hidden"></div>
+              <span class="file-upload-msg"></span>
+            </div>
+          </div>
           <div class="word-hint" id="resume-hint"></div>
         </div>
         <div class="input-card">
           <label for="jobdesc">Job description</label>
           <textarea id="jobdesc" placeholder="Paste the full job posting here..." oninput="updateWordHints()"></textarea>
+          <div class="file-upload">
+            <label class="file-upload-label">
+              <input type="file" class="file-upload-input" accept=".pdf,.docx,.txt" data-target="jobdesc" />
+              <i class="ti ti-upload"></i> Or upload a file
+            </label>
+            <div class="file-upload-status hidden">
+              <div class="spinner-sm hidden"></div>
+              <span class="file-upload-msg"></span>
+            </div>
+          </div>
           <div class="word-hint" id="jobdesc-hint"></div>
         </div>
       </div>
@@ -607,6 +663,16 @@
       <div class="input-card" style="margin-bottom:16px">
         <label for="compare-resume">Your resume</label>
         <textarea id="compare-resume" placeholder="Paste your resume text here..." style="height:180px;width:100%;resize:vertical;background:var(--surface-alt);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;font-size:13px;font-family:var(--font-mono);color:var(--text-primary);line-height:1.6;outline:none" oninput="updateWordHints()"></textarea>
+        <div class="file-upload">
+          <label class="file-upload-label">
+            <input type="file" class="file-upload-input" accept=".pdf,.docx,.txt" data-target="compare-resume" />
+            <i class="ti ti-upload"></i> Or upload a file
+          </label>
+          <div class="file-upload-status hidden">
+            <div class="spinner-sm hidden"></div>
+            <span class="file-upload-msg"></span>
+          </div>
+        </div>
         <div class="word-hint" id="compare-resume-hint"></div>
       </div>
       <div class="job-slots" id="job-slots"></div>
@@ -792,6 +858,74 @@
       el.classList.toggle('warn', count > 0 && count < MIN_WORDS);
     }
 
+    /* ── File upload ── */
+    const ACCEPTED_EXTENSIONS = ['.pdf', '.docx', '.txt'];
+
+    function initFileUploads() {
+      document.addEventListener('change', (e) => {
+        if (e.target.classList.contains('file-upload-input')) {
+          extractFileToTextarea(e.target);
+        }
+      });
+    }
+
+    function getUploadTarget(input) {
+      const targetId = input.dataset.target;
+      if (targetId) return document.getElementById(targetId);
+      return input.closest('.job-slot')?.querySelector('.job-desc') ?? null;
+    }
+
+    function setUploadStatus(statusEl, message, { loading = false, error = false } = {}) {
+      statusEl.classList.remove('hidden');
+      statusEl.classList.toggle('error', error);
+      const spinner = statusEl.querySelector('.spinner-sm');
+      if (spinner) spinner.classList.toggle('hidden', !loading);
+      const msgEl = statusEl.querySelector('.file-upload-msg');
+      if (msgEl) msgEl.textContent = message;
+    }
+
+    async function extractFileToTextarea(input) {
+      const file = input.files[0];
+      if (!file) return;
+
+      const textarea = getUploadTarget(input);
+      const statusEl = input.closest('.file-upload')?.querySelector('.file-upload-status');
+      if (!textarea || !statusEl) return;
+
+      const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+      if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+        setUploadStatus(statusEl, 'Unsupported file type. Use .pdf, .docx, or .txt.', { error: true });
+        input.value = '';
+        return;
+      }
+
+      setUploadStatus(statusEl, 'Extracting text…', { loading: true });
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/extract-text', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          setUploadStatus(
+            statusEl,
+            data.error || 'Extraction failed. Paste text manually.',
+            { error: true },
+          );
+          return;
+        }
+        textarea.value = data.text;
+        updateWordHints();
+        setUploadStatus(statusEl, 'Text loaded — edit below if needed.');
+        setTimeout(() => statusEl.classList.add('hidden'), 3000);
+      } catch {
+        setUploadStatus(statusEl, 'Could not reach the server. Paste text manually.', { error: true });
+      } finally {
+        input.value = '';
+      }
+    }
+
     /* ── Compare job slots ── */
     function addJobSlot(title = '', desc = '') {
       if (document.querySelectorAll('.job-slot').length >= MAX_JOBS) return;
@@ -805,7 +939,17 @@
           <input type="text" class="text-input job-title" placeholder="Job title (e.g. Senior Engineer @ Acme)" value="${esc(title)}" />
           <button class="icon-btn" onclick="removeJobSlot(${id})" title="Remove"><i class="ti ti-x"></i></button>
         </div>
-        <textarea class="job-desc" placeholder="Paste job description…">${esc(desc)}</textarea>`;
+        <textarea class="job-desc" placeholder="Paste job description…">${esc(desc)}</textarea>
+        <div class="file-upload">
+          <label class="file-upload-label">
+            <input type="file" class="file-upload-input" accept=".pdf,.docx,.txt" />
+            <i class="ti ti-upload"></i> Or upload a file
+          </label>
+          <div class="file-upload-status hidden">
+            <div class="spinner-sm hidden"></div>
+            <span class="file-upload-msg"></span>
+          </div>
+        </div>`;
       document.getElementById('job-slots').appendChild(slot);
       updateAddJobBtn();
     }
@@ -1544,6 +1688,7 @@
     });
 
     /* Init */
+    initFileUploads();
     updateWordHints();
     renderHistoryBar();
     renderVersionsPanel();

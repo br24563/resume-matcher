@@ -1,11 +1,14 @@
+import io
 import json
 import os
 import re
 
+from docx import Document
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 from groq import Groq
+from pypdf import PdfReader
 
 load_dotenv()
 
@@ -13,6 +16,8 @@ app = Flask(__name__, static_folder="static")
 CORS(app)
 
 MAX_INPUT_CHARS = 4000
+MAX_FILE_SIZE = 5 * 1024 * 1024
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
 SYSTEM_PROMPT = """You are a professional resume analyst. Analyze how well a resume matches a job description.
 
@@ -108,6 +113,37 @@ def _sanitize_text(text: str) -> str:
     return text[:MAX_INPUT_CHARS]
 
 
+def _clean_extracted_text(text: str) -> str:
+    """Normalize whitespace in extracted document text."""
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    lines = [line.strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line).strip()
+
+
+def _extract_txt(data: bytes) -> str:
+    for encoding in ("utf-8", "utf-8-sig", "latin-1"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("Could not decode text file.")
+
+
+def _extract_pdf(data: bytes) -> str:
+    reader = PdfReader(io.BytesIO(data))
+    parts = []
+    for page in reader.pages:
+        parts.append(page.extract_text() or "")
+    return "\n".join(parts)
+
+
+def _extract_docx(data: bytes) -> str:
+    doc = Document(io.BytesIO(data))
+    return "\n".join(paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip())
+
+
 def _parse_model_json(raw: str) -> dict:
     raw = raw.strip()
     if raw.startswith("```"):
@@ -174,6 +210,42 @@ def index():
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@app.route("/extract-text", methods=["POST"])
+def extract_text():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded."}), 400
+
+    file = request.files["file"]
+    if not file or not file.filename:
+        return jsonify({"error": "No file selected."}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": "Unsupported file type. Use .pdf, .docx, or .txt."}), 400
+
+    data = file.read()
+    if len(data) > MAX_FILE_SIZE:
+        return jsonify({"error": "File exceeds 5MB limit."}), 400
+    if not data:
+        return jsonify({"error": "File is empty."}), 400
+
+    try:
+        if ext == ".txt":
+            text = _extract_txt(data)
+        elif ext == ".pdf":
+            text = _extract_pdf(data)
+        else:
+            text = _extract_docx(data)
+    except Exception as exc:
+        return jsonify({"error": f"Could not extract text: {exc}"}), 422
+
+    text = _clean_extracted_text(text)
+    if not text:
+        return jsonify({"error": "No text could be extracted from this file."}), 422
+
+    return jsonify({"text": text})
 
 
 @app.route("/analyze", methods=["POST"])
